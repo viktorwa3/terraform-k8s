@@ -59,8 +59,8 @@ resource "aws_route_table_association" "cluster_internal" {
 }
 
 resource "aws_subnet" "cluster_internal" {
-  vpc_id     = aws_vpc.main.id
-  cidr_block = "10.0.1.0/24"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
   map_public_ip_on_launch = true
 
   tags = local.default_tags
@@ -88,7 +88,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   for_each          = var.subnet_cluster_internal_allowed_ssh_ips
   security_group_id = aws_security_group.kubernetes.id
   ip_protocol       = "tcp"
-  cidr_ipv4         = "0.0.0.0/0"                         # to be able to use public free github repo runners
+  cidr_ipv4         = "0.0.0.0/0" # to be able to use public free github repo runners
   from_port         = 22
   to_port           = 22
 }
@@ -127,5 +127,5 @@ resource "aws_instance" "cp_main" {
   }
 
   user_data = file("${path.module}/cloud-config.yaml")
-  tags = local.default_tags
+  tags      = local.default_tags
 }
