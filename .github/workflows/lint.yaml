@@ -94,7 +94,7 @@ jobs:
         run: pip install -r ansible/requirements_lint.txt
  
       - name: Install collections
-        run: ansible-galaxy install -r ansible/requirements.yml
+        run: ansible-galaxy install -r ansible/requirements.yaml
  
       - name: yamllint
         run: yamllint ansible/
