@@ -12,6 +12,7 @@ env:
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
   TERRAFORM_VERSION: 1.15.8
+  APP_NAME: terraform_k8s
 
 jobs:
   plan:
@@ -32,9 +33,11 @@ jobs:
 
       - name: Plan
         id: plan
+        env:
+          APP_NAME: ${{ env.APP_NAME }}
         run: |
           set +e
-          terraform plan -out=tfplan -detailed-exitcode
+          terraform plan -out=tfplan -detailed-exitcode -var="app_name=$APP_NAME"
           code=$?
           set -e
           case $code in
@@ -64,7 +67,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: Production
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
     defaults:
