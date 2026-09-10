@@ -1,0 +1,6 @@
+plugin: cloud.terraform.terraform_state
+backend_type: cloud
+backend_config:
+  organization: test132134132432
+  workspaces:
+    name: terraform-k8s

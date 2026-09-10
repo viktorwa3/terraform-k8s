@@ -1,0 +1,119 @@
+name: Configure cluster
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: configure-cluster-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    defaults:
+      run: { working-directory: ./aws }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - run: terraform init
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -out=tfplan -detailed-exitcode
+          code=$?
+          set -e
+          case $code in
+            0) echo "has_changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "has_changes=true"  >> "$GITHUB_OUTPUT" ;;
+            *) exit $code ;;
+          esac
+
+      - name: Summary
+        if: steps.plan.outputs.has_changes == 'true'
+        run: |
+          {
+            echo '## Terraform plan'
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.has_changes == 'true'
+        with:
+          name: tfplan
+          path: aws/tfplan
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+    defaults:
+      run:
+        working-directory: ./aws
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - run: terraform init
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: aws
+      - run: terraform apply tfplan
+
+  ansible:
+    runs-on: ubuntu-latest
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TFC_TEAM_TOKEN }}
+      ANSIBLE_FORCE_COLOR: "1"
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3     # ← required by the inventory plugin
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache galaxy collections
+        uses: actions/cache@v4
+        with:
+          path: ~/.ansible/collections
+          key: galaxy-${{ hashFiles('ansible/requirements.yml') }}
+      - name: Install ansible + collections
+        run: |
+          pip install 'ansible-core==2.18.*'
+          ansible-galaxy install -r ansible/requirements.yml
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.NODE_SSH_KEY }}
+      - name: Sanity check inventory
+        working-directory: ansible
+        run: ansible-inventory -i inventory/terraform.yml --graph
+      - name: Check reachability
+        working-directory: ansible
+        run: ansible all -m ping -i inventory/terraform.yml

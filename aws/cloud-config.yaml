@@ -1,0 +1,7 @@
+users:
+  - name: ansible
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL4SCm/8b5h/tsi/ico9j7+KIbiBIY/LfWx8fGNYoKzC nasible@example.com
