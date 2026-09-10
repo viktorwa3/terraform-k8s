@@ -1,0 +1,110 @@
+name: Lint
+ 
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+ 
+permissions:
+  contents: read
+  pull-requests: read
+ 
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+      ansible:   ${{ steps.filter.outputs.ansible }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            terraform:
+              - 'aws/**'
+            ansible:
+              - 'ansible/**'
+            workflows:
+              - '.github/workflows/**'
+ 
+  actionlint:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+ 
+      - name: actionlint
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: -color
+ 
+  terraform:
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./aws
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+ 
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+ 
+      # -backend=false installs providers without touching HCP,
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+ 
+      - name: terraform validate
+        run: terraform validate
+ 
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+ 
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive --format compact
+ 
+  ansible:
+    needs: changes
+    if: needs.changes.outputs.ansible == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+ 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+ 
+      - name: Install linters
+        run: |
+          pip install \
+            'ansible-core==2.18.*' \
+            'ansible-lint==25.*' \
+            'yamllint==1.35.*'
+ 
+      - name: Install collections
+        run: ansible-galaxy install -r ansible/requirements.yml
+ 
+      - name: yamllint
+        run: yamllint ansible/
+ 
+      - name: ansible-lint
+        working-directory: ansible
+        run: ansible-lint --force-color
