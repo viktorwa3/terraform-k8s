@@ -11,6 +11,7 @@ env:
   TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
+  TERRAFORM_VERSION: 1.15.8
 
 jobs:
   plan:
@@ -24,7 +25,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
       - run: terraform init
@@ -73,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
       - run: terraform init
       - uses: actions/download-artifact@v4
@@ -92,7 +93,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3     # ← required by the inventory plugin
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
       - uses: actions/setup-python@v5
         with:
