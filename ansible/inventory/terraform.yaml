@@ -3,4 +3,11 @@ backend_type: cloud
 backend_config:
   organization: test132134132432
   workspaces:
-    name: terraform-k8s
+    name: light
+search_child_modules: true
+compose:
+  ansible_host: public_ip
+  ansible_user: "'ansible'"
+keyed_groups:
+  - key: tags.Role | default('cp')
+    prefix: role

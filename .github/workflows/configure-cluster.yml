@@ -86,7 +86,8 @@ jobs:
 
   ansible:
     runs-on: ubuntu-latest
-    needs: apply
+    needs: [plan, apply]
+    if: always() && needs.plan.result == 'success' && needs.apply.result != 'failure'
     env:
       ANSIBLE_FORCE_COLOR: "1"
       ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -115,7 +116,10 @@ jobs:
           ssh-private-key: ${{ secrets.NODE_SSH_KEY }}
       - name: Sanity check inventory
         working-directory: ansible
-        run: ansible-inventory -i inventory/terraform.yml --graph
+        run: 
+          |
+          ansible-inventory -i inventory/terraform.yaml --list > inv.json
+          test "$(jq '._meta.hostvars | length' inv.json)" -gt 0 || { echo "empty inventory"; exit 1; }
       - name: Check reachability
         working-directory: ansible
-        run: ansible all -m ping -i inventory/terraform.yml
+        run: ansible all -m ping -i inventory/terraform.yaml
