@@ -107,11 +107,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ansible/collections
-          key: galaxy-${{ hashFiles('ansible/requirements.yml') }}
+          key: galaxy-${{ hashFiles('ansible/requirements.yaml') }}
       - name: Install ansible + collections
         run: |
           pip install 'ansible-core==2.18.*'
-          ansible-galaxy install -r ansible/requirements.yml
+          ansible-galaxy install -r ansible/requirements.yaml
       - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
