@@ -1,0 +1,57 @@
+---
+- name: Check whether helm is installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: cni_cilium_helm_binary
+
+- name: Install helm
+  when: not cni_cilium_helm_binary.stat.exists
+  block:
+    - name: Download the helm archive
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        dest: /tmp/helm.tar.gz
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Unpack the helm binary
+      ansible.builtin.unarchive:
+        src: /tmp/helm.tar.gz
+        dest: /usr/local/bin
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+          - linux-amd64/helm
+        owner: root
+        group: root
+        mode: "0755"
+
+- name: Add the Cilium helm repository
+  kubernetes.core.helm_repository:
+    name: cilium
+    repo_url: https://helm.cilium.io/
+
+- name: Install Cilium
+  kubernetes.core.helm:
+    name: cilium
+    chart_ref: cilium/cilium
+    chart_version: "{{ cilium_version }}"
+    release_namespace: kube-system
+    kubeconfig: /etc/kubernetes/admin.conf
+    wait: true
+    wait_timeout: 5m
+    values:
+      ipam:
+        mode: kubernetes
+      # kube-proxy was skipped during kubeadm init, so Cilium takes over
+      kubeProxyReplacement: true
+      k8sServiceHost: "{{ ansible_default_ipv4.address }}"
+      k8sServicePort: 6443
+
+- name: Wait for all nodes to become Ready
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
+      nodes --all --timeout=300s
+  changed_when: false

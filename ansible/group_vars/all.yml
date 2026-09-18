@@ -1,0 +1,16 @@
+---
+# Minor track used for the pkgs.k8s.io apt repo (must match the kubeadm/kubelet major.minor)
+k8s_minor: "v1.36"
+# Full version handed to kubeadm; keep in sync with k8s_minor
+k8s_version: "v1.36.0"
+# apt version glob used to pin kubelet/kubeadm/kubectl
+k8s_apt_version: "1.36.*"
+
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+
+cilium_version: "1.20.2"
+helm_version: "v3.19.0"
+
+# Single-node learning cluster: let workloads schedule on the control plane
+untaint_control_plane: true

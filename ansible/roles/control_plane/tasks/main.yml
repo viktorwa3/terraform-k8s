@@ -1,0 +1,48 @@
+---
+- name: Check whether the control plane is already initialised
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: control_plane_admin_conf
+
+- name: Render the kubeadm configuration
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Run kubeadm init
+  ansible.builtin.command:
+    cmd: kubeadm init --config /etc/kubernetes/kubeadm-config.yaml --skip-phases=addon/kube-proxy
+    creates: /etc/kubernetes/admin.conf
+  when: not control_plane_admin_conf.stat.exists
+
+- name: Ensure the remote user has a kube config directory
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+
+- name: Install the admin kubeconfig for the remote user
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Remove the control-plane taint on a single-node cluster
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes --all
+      node-role.kubernetes.io/control-plane:NoSchedule-
+  register: control_plane_untaint
+  changed_when: "'untainted' in control_plane_untaint.stdout"
+  failed_when:
+    - control_plane_untaint.rc != 0
+    - "'not found' not in control_plane_untaint.stderr"
+  when: untaint_control_plane | bool

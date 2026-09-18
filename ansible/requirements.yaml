@@ -6,3 +6,5 @@ collections:
     version: "10.1.0"
   - name: ansible.posix
     version: "1.6.2"
+  - name: kubernetes.core
+    version: "6.6.0"

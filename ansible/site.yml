@@ -1,0 +1,16 @@
+---
+- name: Bootstrap Kubernetes control plane
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - role: common
+      tags: [common]
+    - role: containerd
+      tags: [containerd]
+    - role: kube_tools
+      tags: [kube_tools]
+    - role: control_plane
+      tags: [control_plane]
+    - role: cni_cilium
+      tags: [cni]

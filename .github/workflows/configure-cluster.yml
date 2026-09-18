@@ -125,3 +125,17 @@ jobs:
           ansible all -m wait_for_connection \
             -a 'delay=10 sleep=5 timeout=300'
           ansible all -m ping
+
+      - name: Bootstrap Kubernetes
+        working-directory: ansible
+        run: ansible-playbook site.yml --diff
+
+      - name: Cluster summary
+        working-directory: ansible
+        run: |
+          {
+            echo '## Cluster'
+            echo '```'
+            ansible all -b -m command -a 'kubectl --kubeconfig /etc/kubernetes/admin.conf get nodes,pods -A -o wide'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
