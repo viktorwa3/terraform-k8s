@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+      TF_TOKEN_app_terraform_io: ${{ env.TF_TOKEN_app_terraform_io }}
     defaults:
       run:
         working-directory: ./aws
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: apply
     env:
-      TF_TOKEN_app_terraform_io: ${{ secrets.TFC_TEAM_TOKEN }}
+      TF_TOKEN_app_terraform_io: ${{ env.TF_TOKEN_app_terraform_io }}
       ANSIBLE_FORCE_COLOR: "1"
       ANSIBLE_HOST_KEY_CHECKING: "False"
     steps:
