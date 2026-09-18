@@ -84,6 +84,15 @@ resource "aws_vpc_security_group_ingress_rule" "kubernetes" {
   to_port           = var.subnet_cluster_internal_ports[count.index]
 }
 
+# aws_security_group with no inline egress block means Terraform REVOKES the
+# AWS default "allow all outbound" rule, so the node cannot reach apt/registries.
+resource "aws_vpc_security_group_egress_rule" "all" {
+  security_group_id = aws_security_group.kubernetes.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow all outbound"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
   security_group_id = aws_security_group.kubernetes.id
   ip_protocol       = "tcp"
