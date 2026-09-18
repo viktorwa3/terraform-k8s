@@ -116,10 +116,12 @@ jobs:
           ssh-private-key: ${{ secrets.NODE_SSH_KEY }}
       - name: Sanity check inventory
         working-directory: ansible
-        run: 
-          |
-          ansible-inventory -i inventory/terraform.yaml --list > inv.json
+        run: |
+          ansible-inventory --list > inv.json
           test "$(jq '._meta.hostvars | length' inv.json)" -gt 0 || { echo "empty inventory"; exit 1; }
-      - name: Check reachability
+      - name: Wait for nodes
         working-directory: ansible
-        run: ansible all -m ping -i inventory/terraform.yaml
+        run: |
+          ansible all -m wait_for_connection \
+            -a 'delay=10 sleep=5 timeout=300'
+          ansible all -m ping

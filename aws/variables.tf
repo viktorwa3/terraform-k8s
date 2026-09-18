@@ -21,12 +21,6 @@ variable "subnet_cluster_internal_ports" {
   default     = [6443, 2379, 2380, 10250, 10257, 10259, 9100]
 }
 
-variable "subnet_cluster_internal_allowed_ssh_ips" {
-  description = "Ports to be opened inside the cluster private subnet"
-  type        = set(string)
-  default     = ["46.255.20.10/32"]
-}
-
 variable "ec2_instance_type" {
   description = "Ec2 tye to use for k8s nodes"
   type        = string

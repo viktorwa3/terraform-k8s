@@ -85,7 +85,6 @@ resource "aws_vpc_security_group_ingress_rule" "kubernetes" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
-  for_each          = var.subnet_cluster_internal_allowed_ssh_ips
   security_group_id = aws_security_group.kubernetes.id
   ip_protocol       = "tcp"
   cidr_ipv4         = "0.0.0.0/0" # to be able to use public free github repo runners
