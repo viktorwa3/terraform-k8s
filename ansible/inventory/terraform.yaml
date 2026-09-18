@@ -1,3 +1,4 @@
+---
 plugin: cloud.terraform.terraform_state
 backend_type: cloud
 backend_config:
