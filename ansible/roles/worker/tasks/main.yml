@@ -33,3 +33,14 @@
           kubeadm join failed (rc={{ worker_join.rc }}):
           {{ worker_join.stderr | default('') | regex_replace('[a-z0-9]{6}\.[a-z0-9]{16}', '<redacted>') }}
       when: worker_join.rc | default(0) != 0
+
+# kubeadm only labels control-plane nodes, so workers show ROLES <none>.
+# Runs outside the join block so already-joined workers get labelled too.
+- name: Label the node as a worker
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf label node {{ ansible_hostname }}
+      node-role.kubernetes.io/worker= --overwrite
+  delegate_to: "{{ groups['control_plane'] | first }}"
+  register: worker_label
+  changed_when: "'not labeled' not in worker_label.stdout"
