@@ -15,14 +15,25 @@ variable "environment" {
   default     = "dev"
 }
 
-variable "subnet_cluster_internal_ports" {
-  description = "Ports to be opened inside the cluster private subnet"
-  type        = list(number)
-  default     = [6443, 2379, 2380, 10250, 10257, 10259, 9100]
-}
-
 variable "ec2_instance_type" {
   description = "Ec2 tye to use for k8s nodes"
+  type        = string
+  default     = "t3a.medium"
+}
+
+variable "worker_count" {
+  description = "Number of Kubernetes worker nodes"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.worker_count >= 0 && var.worker_count <= 5
+    error_message = "worker_count must be between 0 and 5."
+  }
+}
+
+variable "worker_instance_type" {
+  description = "EC2 instance type for worker nodes (kubeadm needs >= 2 vCPU / 2 GiB)"
   type        = string
   default     = "t3a.medium"
 }

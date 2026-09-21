@@ -74,14 +74,14 @@ resource "aws_security_group" "kubernetes" {
   tags = local.default_tags
 }
 
-resource "aws_vpc_security_group_ingress_rule" "kubernetes" {
-  count = length(var.subnet_cluster_internal_ports)
-
-  security_group_id = aws_security_group.kubernetes.id
-  ip_protocol       = "tcp"
-  cidr_ipv4         = aws_subnet.cluster_internal.cidr_block
-  from_port         = var.subnet_cluster_internal_ports[count.index]
-  to_port           = var.subnet_cluster_internal_ports[count.index]
+# Every node shares this SG, so "from the SG itself" == "from any cluster node".
+# Covers kube-apiserver 6443, kubelet 10250, etcd, Cilium VXLAN 8472/udp,
+# Cilium health 4240/tcp, ICMP health probes and the NodePort range in one rule.
+resource "aws_vpc_security_group_ingress_rule" "cluster_internal" {
+  security_group_id            = aws_security_group.kubernetes.id
+  referenced_security_group_id = aws_security_group.kubernetes.id
+  ip_protocol                  = "-1"
+  description                  = "All traffic between cluster nodes"
 }
 
 # aws_security_group with no inline egress block means Terraform REVOKES the
@@ -135,5 +135,33 @@ resource "aws_instance" "cp_main" {
   }
 
   user_data = file("${path.module}/cloud-config.yaml")
-  tags      = local.default_tags
+
+  # Name must be unique per instance: the Ansible inventory uses it as the hostname.
+  # Role drives the control_plane / workers inventory groups.
+  tags = merge(local.default_tags, {
+    Name = "${var.app_name}-cp-0"
+    Role = "control-plane"
+  })
+}
+
+resource "aws_instance" "worker" {
+  count = var.worker_count
+
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.worker_instance_type
+  subnet_id              = aws_subnet.cluster_internal.id
+  vpc_security_group_ids = [aws_security_group.kubernetes.id]
+  key_name               = data.aws_key_pair.common_key.key_name
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+    tags        = local.default_tags
+  }
+
+  user_data = file("${path.module}/cloud-config.yaml")
+
+  tags = merge(local.default_tags, {
+    Name = "${var.app_name}-worker-${count.index}"
+    Role = "worker"
+  })
 }

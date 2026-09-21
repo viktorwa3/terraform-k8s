@@ -6,9 +6,14 @@ backend_config:
   workspaces:
     name: light
 search_child_modules: true
+# Without this the plugin names hosts "<type>_<name>" with NO count index, so
+# aws_instance.worker[0] and [1] would both become "aws_instance_worker" and
+# silently overwrite each other. The Name tag is unique per instance.
+hostnames:
+  - tag:Name
 compose:
   ansible_host: public_ip
   ansible_user: "'ansible'"
-keyed_groups:
-  - key: tags.Role | default('cp')
-    prefix: role
+groups:
+  control_plane: tags.Role == 'control-plane'
+  workers: tags.Role == 'worker'

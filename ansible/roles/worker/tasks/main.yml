@@ -1,0 +1,35 @@
+---
+- name: Check whether the node has already joined
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: worker_kubelet_conf
+
+- name: Join the node to the cluster
+  when: not worker_kubelet_conf.stat.exists
+  block:
+    # One short-lived token per worker, minted on the control plane. The output
+    # contains the bootstrap token, so it never reaches the log.
+    - name: Create a join command on the control plane
+      ansible.builtin.command:
+        cmd: kubeadm token create --print-join-command --ttl 15m
+      delegate_to: "{{ groups['control_plane'] | first }}"
+      register: worker_join_command
+      changed_when: true
+      no_log: true
+
+    - name: Run kubeadm join
+      ansible.builtin.command:
+        cmd: "{{ worker_join_command.stdout }}"
+        creates: /etc/kubernetes/kubelet.conf
+      register: worker_join
+      failed_when: false
+      no_log: true
+
+    # no_log would hide the reason of a failed join entirely, so surface stderr
+    # with the bootstrap token (format [a-z0-9]{6}.[a-z0-9]{16}) redacted.
+    - name: Fail with the kubeadm join error, token redacted
+      ansible.builtin.fail:
+        msg: >-
+          kubeadm join failed (rc={{ worker_join.rc }}):
+          {{ worker_join.stderr | default('') | regex_replace('[a-z0-9]{6}\.[a-z0-9]{16}', '<redacted>') }}
+      when: worker_join.rc | default(0) != 0

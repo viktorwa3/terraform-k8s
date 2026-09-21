@@ -60,10 +60,3 @@
       kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
       nodes --all --timeout=300s
   changed_when: false
-
-- name: Wait for the kube-system pods to become Ready
-  ansible.builtin.command:
-    cmd: >-
-      kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
-      pods --all -n kube-system --timeout=300s
-  changed_when: false

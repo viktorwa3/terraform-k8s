@@ -1,5 +1,5 @@
 ---
-- name: Bootstrap Kubernetes control plane
+- name: Prepare every node
   hosts: all
   become: true
   gather_facts: true
@@ -10,7 +10,41 @@
       tags: [containerd]
     - role: kube_tools
       tags: [kube_tools]
+
+- name: Bootstrap the control plane
+  hosts: control_plane
+  become: true
+  gather_facts: true
+  roles:
     - role: control_plane
       tags: [control_plane]
     - role: cni_cilium
       tags: [cni]
+
+- name: Join worker nodes
+  hosts: workers
+  become: true
+  gather_facts: true
+  roles:
+    - role: worker
+      tags: [worker]
+
+- name: Verify the cluster
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  tags: [verify]
+  tasks:
+    - name: Wait for every node to become Ready
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
+          nodes --all --timeout=300s
+      changed_when: false
+
+    - name: Wait for every kube-system pod to become Ready
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
+          pods --all -n kube-system --timeout=300s
+      changed_when: false

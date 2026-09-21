@@ -35,14 +35,33 @@
     group: "{{ ansible_user }}"
     mode: "0600"
 
+- name: Read the current control-plane taints
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf get nodes
+      -l node-role.kubernetes.io/control-plane
+      -o jsonpath={.items[*].spec.taints[*].key}
+  register: control_plane_taints
+  changed_when: false
+
 - name: Remove the control-plane taint on a single-node cluster
   ansible.builtin.command:
     cmd: >-
-      kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes --all
+      kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes
+      -l node-role.kubernetes.io/control-plane
       node-role.kubernetes.io/control-plane:NoSchedule-
-  register: control_plane_untaint
-  changed_when: "'untainted' in control_plane_untaint.stdout"
-  failed_when:
-    - control_plane_untaint.rc != 0
-    - "'not found' not in control_plane_untaint.stderr"
-  when: untaint_control_plane | bool
+  changed_when: true
+  when:
+    - untaint_control_plane | bool
+    - "'node-role.kubernetes.io/control-plane' in control_plane_taints.stdout"
+
+- name: Restore the control-plane taint once dedicated workers exist
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes
+      -l node-role.kubernetes.io/control-plane
+      node-role.kubernetes.io/control-plane:NoSchedule
+  changed_when: true
+  when:
+    - not untaint_control_plane | bool
+    - "'node-role.kubernetes.io/control-plane' not in control_plane_taints.stdout"
