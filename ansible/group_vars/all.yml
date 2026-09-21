@@ -1,9 +1,9 @@
 ---
-# Minor track used for the pkgs.k8s.io apt repo (must match the kubeadm/kubelet major.minor)
+# Minor track for the pkgs.k8s.io apt repo and the apt version pin.
+# kubernetesVersion is deliberately NOT set in ClusterConfiguration: kubeadm then
+# uses its own binary version, which matches the apt-installed kubelet. Pinning it
+# separately produced kubelet 1.36.4 against a 1.36.0 control plane.
 k8s_minor: "v1.36"
-# Full version handed to kubeadm; keep in sync with k8s_minor
-k8s_version: "v1.36.0"
-# apt version glob used to pin kubelet/kubeadm/kubectl
 k8s_apt_version: "1.36.*"
 
 pod_cidr: "10.244.0.0/16"

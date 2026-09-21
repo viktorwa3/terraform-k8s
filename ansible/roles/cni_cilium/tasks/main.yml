@@ -44,6 +44,11 @@
     values:
       ipam:
         mode: kubernetes
+      operator:
+        # the chart defaults to 2 replicas with pod anti-affinity, so the second
+        # one sits Pending forever on a single-node cluster. Literal int on
+        # purpose: a templated "{{ ... }}" would reach helm as a string.
+        replicas: 1
       # kube-proxy was skipped during kubeadm init, so Cilium takes over
       kubeProxyReplacement: true
       k8sServiceHost: "{{ ansible_default_ipv4.address }}"
@@ -54,4 +59,11 @@
     cmd: >-
       kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
       nodes --all --timeout=300s
+  changed_when: false
+
+- name: Wait for the kube-system pods to become Ready
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
+      pods --all -n kube-system --timeout=300s
   changed_when: false
