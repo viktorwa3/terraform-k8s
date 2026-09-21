@@ -136,6 +136,6 @@ jobs:
           {
             echo '## Cluster'
             echo '```'
-            ansible all -b -m command -a 'kubectl --kubeconfig /etc/kubernetes/admin.conf get nodes,pods -A -o wide'
+            ansible control_plane -b -m command -a 'kubectl --kubeconfig /etc/kubernetes/admin.conf get nodes,pods -A -o wide'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
