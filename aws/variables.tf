@@ -24,7 +24,7 @@ variable "ec2_instance_type" {
 variable "worker_count" {
   description = "Number of Kubernetes worker nodes"
   type        = number
-  default     = 1
+  default     = 2
 
   validation {
     condition     = var.worker_count >= 0 && var.worker_count <= 5

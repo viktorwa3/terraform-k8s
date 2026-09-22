@@ -15,3 +15,10 @@ helm_version: "v3.19.0"
 # Workloads may land on the control plane only while there are no workers.
 # As soon as the workers group is non-empty the control-plane taint is restored.
 untaint_control_plane: "{{ groups['workers'] | default([]) | length == 0 }}"
+
+# GitOps: Ansible only bootstraps Argo CD and the root app-of-apps; everything
+# under gitops/apps is reconciled by Argo CD from git afterwards.
+argocd_chart_version: "10.9.2"
+gitops_repo_url: https://github.com/viktorwa3/terraform-k8s.git
+gitops_revision: master
+gitops_apps_path: gitops/apps

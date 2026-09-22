@@ -29,6 +29,14 @@
     - role: worker
       tags: [worker]
 
+- name: Bootstrap GitOps
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  roles:
+    - role: argocd
+      tags: [argocd]
+
 - name: Verify the cluster
   hosts: control_plane
   become: true

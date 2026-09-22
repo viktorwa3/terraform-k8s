@@ -1,0 +1,56 @@
+---
+- name: Add the Argo helm repository
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: https://argoproj.github.io/argo-helm
+
+- name: Install Argo CD
+  kubernetes.core.helm:
+    name: argocd
+    chart_ref: argo/argo-cd
+    chart_version: "{{ argocd_chart_version }}"
+    release_namespace: argocd
+    create_namespace: true
+    kubeconfig: /etc/kubernetes/admin.conf
+    wait: true
+    timeout: 10m
+    values:
+      dex:
+        enabled: false
+      notifications:
+        enabled: false
+      configs:
+        params:
+          # TLS is terminated by the kubectl port-forward / SSH tunnel for the demo
+          server.insecure: true
+        cm:
+          # Argo CD does not assess the health of Application resources by default,
+          # so sync waves in an app-of-apps would not wait for the previous wave to
+          # become Healthy. This restores that behaviour.
+          resource.customizations.health.argoproj.io_Application: |
+            hs = {}
+            hs.status = "Progressing"
+            hs.message = ""
+            if obj.status ~= nil then
+              if obj.status.health ~= nil then
+                hs.status = obj.status.health.status
+                if obj.status.health.message ~= nil then
+                  hs.message = obj.status.health.message
+                end
+              end
+            end
+            return hs
+
+- name: Render the root app-of-apps
+  ansible.builtin.template:
+    src: root-app.yaml.j2
+    dest: /etc/kubernetes/argocd-root-app.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Apply the root app-of-apps
+  ansible.builtin.command:
+    cmd: kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f /etc/kubernetes/argocd-root-app.yaml
+  register: argocd_root_apply
+  changed_when: "'unchanged' not in argocd_root_apply.stdout"

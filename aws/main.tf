@@ -128,6 +128,16 @@ resource "aws_instance" "cp_main" {
   subnet_id              = aws_subnet.cluster_internal.id
   vpc_security_group_ids = [aws_security_group.kubernetes.id]
   key_name               = data.aws_key_pair.common_key.key_name
+  iam_instance_profile   = aws_iam_instance_profile.node.name
+
+  # IMDSv2 only. Hop limit 2 so pods (one extra network hop behind the node)
+  # can reach instance metadata -> External Secrets uses the node's IAM role.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
@@ -152,6 +162,16 @@ resource "aws_instance" "worker" {
   subnet_id              = aws_subnet.cluster_internal.id
   vpc_security_group_ids = [aws_security_group.kubernetes.id]
   key_name               = data.aws_key_pair.common_key.key_name
+  iam_instance_profile   = aws_iam_instance_profile.node.name
+
+  # IMDSv2 only. Hop limit 2 so pods (one extra network hop behind the node)
+  # can reach instance metadata -> External Secrets uses the node's IAM role.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   root_block_device {
     volume_size = 30
     volume_type = "gp3"

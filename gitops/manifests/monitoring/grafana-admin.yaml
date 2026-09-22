@@ -1,0 +1,24 @@
+---
+# Git holds only a pointer to the secret. The value lives in SSM Parameter Store
+# (written by Terraform as a write-only attribute) and is materialised here by ESO.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-parameter-store
+  target:
+    name: grafana-admin
+    creationPolicy: Owner
+    template:
+      data:
+        admin-user: admin
+        admin-password: "{{ .password }}"
+  data:
+    - secretKey: password
+      remoteRef:
+        key: /terraform-k8s/grafana/admin-password
