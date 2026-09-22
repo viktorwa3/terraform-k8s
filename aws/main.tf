@@ -150,12 +150,14 @@ resource "aws_instance" "cp_main" {
   key_name               = data.aws_key_pair.common_key.key_name
   iam_instance_profile   = aws_iam_instance_profile.node.name
 
-  # IMDSv2 only. Hop limit 2 so pods (one extra network hop behind the node)
-  # can reach instance metadata -> External Secrets uses the node's IAM role.
+  # IMDSv2 only. The token reply is sent with IP TTL = hop limit. With Cilium
+  # (VXLAN, iptables masquerade) the reply is routed twice on its way into a pod,
+  # so 2 (the usual Docker advice) is not enough: the pod gets an empty token and
+  # the AWS SDK times out. Verified: node OK, pod "token length: 0" with 2.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 3
   }
 
   root_block_device {
@@ -184,12 +186,14 @@ resource "aws_instance" "worker" {
   key_name               = data.aws_key_pair.common_key.key_name
   iam_instance_profile   = aws_iam_instance_profile.node.name
 
-  # IMDSv2 only. Hop limit 2 so pods (one extra network hop behind the node)
-  # can reach instance metadata -> External Secrets uses the node's IAM role.
+  # IMDSv2 only. The token reply is sent with IP TTL = hop limit. With Cilium
+  # (VXLAN, iptables masquerade) the reply is routed twice on its way into a pod,
+  # so 2 (the usual Docker advice) is not enough: the pod gets an empty token and
+  # the AWS SDK times out. Verified: node OK, pod "token length: 0" with 2.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 3
   }
 
   root_block_device {
