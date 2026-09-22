@@ -87,7 +87,7 @@ jobs:
   ansible:
     runs-on: ubuntu-latest
     needs: [plan, apply]
-    if: always() && needs.plan.result == 'success' && needs.apply.result != 'failure'
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.apply.result != 'failure' }}
     timeout-minutes: 30
     env:
       ANSIBLE_FORCE_COLOR: "1"

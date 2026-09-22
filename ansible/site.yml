@@ -57,39 +57,46 @@
           pods --all -n kube-system --timeout=300s
       changed_when: false
 
-    # The root app is Healthy only when every child Application is Healthy (Lua
-    # health check in argocd-cm), so this single wait covers ESO, the secret store,
-    # the ExternalSecret and kube-prometheus-stack.
+    # Poll instead of one long silent `kubectl wait`:
+    #  - every attempt is a short SSH call, so idle-TCP drops on the runner can't hang it
+    #  - "FAILED - RETRYING ... (N retries left)" in the log shows the job is alive
+    #  - the last attempt's table (name / sync / health per app) is kept for the rescue
+    # Only health is required: kube-prometheus-stack is often permanently OutOfSync
+    # (its admission-webhook Job patches caBundle), which says nothing about whether it works.
     - name: Wait for GitOps to converge
       block:
-        # async + poll: the runner reconnects every 15 s instead of holding one silent
-        # SSH session open for up to 15 minutes (see ssh_connection in ansible.cfg).
-        - name: Wait for the root Application to become Healthy
+        - name: Wait until every Argo CD application is Healthy
           ansible.builtin.command:
             cmd: >-
-              kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd wait application/root
-              --for=jsonpath={.status.health.status}=Healthy --timeout=900s
-          async: 960
-          poll: 15
+              kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd get applications --no-headers
+              -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
+          register: gitops_apps
           changed_when: false
+          retries: 60
+          delay: 15
+          until:
+            - gitops_apps.rc == 0
+            - gitops_apps.stdout_lines | length >= gitops_expected_apps
+            - gitops_apps.stdout_lines | reject('search', '\\sHealthy\\s*$') | list | length == 0
       rescue:
-        - name: Collect Argo CD application status
+        - name: Collect Argo CD application conditions
           ansible.builtin.command:
             cmd: >-
               kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd get applications
               -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[*].message
-          register: gitops_apps
+          register: gitops_conditions
           changed_when: false
           failed_when: false
 
-        - name: Collect External Secrets status
+        - name: Collect External Secrets and workload status
           ansible.builtin.command:
             cmd: >-
-              kubectl --kubeconfig /etc/kubernetes/admin.conf get clustersecretstore,externalsecret -A
+              kubectl --kubeconfig /etc/kubernetes/admin.conf get
+              clustersecretstore,externalsecret,pods -A --field-selector=metadata.namespace!=kube-system
           register: gitops_eso
           changed_when: false
           failed_when: false
 
         - name: Fail with the GitOps state
           ansible.builtin.fail:
-            msg: "{{ gitops_apps.stdout_lines + [''] + gitops_eso.stdout_lines + [gitops_eso.stderr | default('')] }}"
+            msg: "{{ gitops_conditions.stdout_lines + [''] + gitops_eso.stdout_lines + [gitops_eso.stderr | default('')] }}"

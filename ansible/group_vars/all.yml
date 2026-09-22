@@ -22,3 +22,5 @@ argocd_chart_version: "10.9.2"
 gitops_repo_url: https://github.com/viktorwa3/terraform-k8s.git
 gitops_revision: master
 gitops_apps_path: gitops/apps
+# root + external-secrets + secret-stores + monitoring-secrets + kube-prometheus-stack
+gitops_expected_apps: 5
