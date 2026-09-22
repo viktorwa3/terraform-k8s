@@ -56,3 +56,36 @@
           kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready
           pods --all -n kube-system --timeout=300s
       changed_when: false
+
+    # The root app is Healthy only when every child Application is Healthy (Lua
+    # health check in argocd-cm), so this single wait covers ESO, the secret store,
+    # the ExternalSecret and kube-prometheus-stack.
+    - name: Wait for GitOps to converge
+      block:
+        - name: Wait for the root Application to become Synced and Healthy
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd wait application/root
+              --for=jsonpath={.status.health.status}=Healthy --timeout=900s
+          changed_when: false
+      rescue:
+        - name: Collect Argo CD application status
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd get applications
+              -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[*].message
+          register: gitops_apps
+          changed_when: false
+          failed_when: false
+
+        - name: Collect External Secrets status
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig /etc/kubernetes/admin.conf get clustersecretstore,externalsecret -A
+          register: gitops_eso
+          changed_when: false
+          failed_when: false
+
+        - name: Fail with the GitOps state
+          ansible.builtin.fail:
+            msg: "{{ gitops_apps.stdout_lines + [''] + gitops_eso.stdout_lines + [gitops_eso.stderr | default('')] }}"
