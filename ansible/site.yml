@@ -61,15 +61,16 @@
     #  - every attempt is a short SSH call, so idle-TCP drops on the runner can't hang it
     #  - "FAILED - RETRYING ... (N retries left)" in the log shows the job is alive
     #  - the last attempt's table (name / sync / health per app) is kept for the rescue
-    # Only health is required: kube-prometheus-stack is often permanently OutOfSync
-    # (its admission-webhook Job patches caBundle), which says nothing about whether it works.
+    # Healthy alone is not enough: while an app's first sync is still running (e.g. only
+    # its PreSync hook Job exists yet) Argo reports it Healthy. So the last operation must
+    # also have Succeeded. Sync status is not required (drift can be benign).
     - name: Wait for GitOps to converge
       block:
         - name: Wait until every Argo CD application is Healthy
           ansible.builtin.command:
             cmd: >-
               kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd get applications --no-headers
-              -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
+              -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,OP:.status.operationState.phase
           register: gitops_apps
           changed_when: false
           retries: 60
@@ -77,13 +78,13 @@
           until:
             - gitops_apps.rc == 0
             - gitops_apps.stdout_lines | length >= gitops_expected_apps
-            - gitops_apps.stdout_lines | reject('search', '\\sHealthy\\s*$') | list | length == 0
+            - gitops_apps.stdout_lines | reject('search', '\\sHealthy\\s+Succeeded\\s*$') | list | length == 0
       rescue:
         - name: Collect Argo CD application conditions
           ansible.builtin.command:
             cmd: >-
               kubectl --kubeconfig /etc/kubernetes/admin.conf -n argocd get applications
-              -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[*].message
+              -o custom-columns=NAME:.metadata.name,HEALTH:.status.health.status,OP:.status.operationState.phase,MSG:.status.conditions[*].message
           register: gitops_conditions
           changed_when: false
           failed_when: false
