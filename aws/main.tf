@@ -58,9 +58,29 @@ resource "aws_route_table_association" "cluster_internal" {
   route_table_id = aws_route_table.public.id
 }
 
+# Not every AZ offers every instance type (us-east-1e has no t3a.*). Without an
+# explicit AZ AWS picks one at random for the subnet, and RunInstances then fails.
+# Pick the first AZ, alphabetically, that offers both the CP and the worker type.
+data "aws_ec2_instance_type_offerings" "cluster" {
+  for_each      = toset([var.ec2_instance_type, var.worker_instance_type])
+  location_type = "availability-zone"
+
+  filter {
+    name   = "instance-type"
+    values = [each.key]
+  }
+}
+
+locals {
+  cluster_az = sort(tolist(setintersection(
+    [for o in data.aws_ec2_instance_type_offerings.cluster : toset(o.locations)]...
+  )))[0]
+}
+
 resource "aws_subnet" "cluster_internal" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
+  availability_zone       = local.cluster_az
   map_public_ip_on_launch = true
 
   tags = local.default_tags
