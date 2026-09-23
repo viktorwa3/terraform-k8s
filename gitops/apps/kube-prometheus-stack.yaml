@@ -37,8 +37,7 @@ spec:
         # No kube-proxy: Cilium replaces it.
         kubeProxy:
           enabled: false
-        # kubeadm binds these to 127.0.0.1, so they are unscrapable from Prometheus
-        # and would only produce permanently firing *TargetDown alerts.
+        # kubeadm binds these to 127.0.0.1: unscrapable, only noisy alerts.
         kubeControllerManager:
           enabled: false
         kubeScheduler:
@@ -48,9 +47,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
-  # The admission-webhook Jobs inject a generated caBundle into the webhook configs
-  # after Argo applied them, so they would show as OutOfSync forever (and selfHeal
-  # would keep "fixing" them, breaking the webhook). Ignore exactly that field.
+  # The admission Job injects caBundle; without this selfHeal would wipe it.
   ignoreDifferences:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
@@ -66,6 +63,6 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      # the operator CRDs exceed the 256 KiB last-applied annotation limit
+      # operator CRDs exceed the annotation size limit
       - ServerSideApply=true
       - RespectIgnoreDifferences=true

@@ -7,8 +7,7 @@
 - name: Join the node to the cluster
   when: not worker_kubelet_conf.stat.exists
   block:
-    # One short-lived token per worker, minted on the control plane. The output
-    # contains the bootstrap token, so it never reaches the log.
+    # Short-lived token, kept out of the log.
     - name: Create a join command on the control plane
       ansible.builtin.command:
         cmd: kubeadm token create --print-join-command --ttl 15m
@@ -25,8 +24,7 @@
       failed_when: false
       no_log: true
 
-    # no_log would hide the reason of a failed join entirely, so surface stderr
-    # with the bootstrap token (format [a-z0-9]{6}.[a-z0-9]{16}) redacted.
+    # no_log hides failures, so print stderr with the token redacted.
     - name: Fail with the kubeadm join error, token redacted
       ansible.builtin.fail:
         msg: >-
@@ -34,8 +32,7 @@
           {{ worker_join.stderr | default('') | regex_replace('[a-z0-9]{6}\.[a-z0-9]{16}', '<redacted>') }}
       when: worker_join.rc | default(0) != 0
 
-# kubeadm only labels control-plane nodes, so workers show ROLES <none>.
-# Runs outside the join block so already-joined workers get labelled too.
+# kubeadm labels only CP nodes; outside the block so existing workers get it too.
 - name: Label the node as a worker
   ansible.builtin.command:
     cmd: >-

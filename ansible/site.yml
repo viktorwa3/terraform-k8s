@@ -57,13 +57,8 @@
           pods --all -n kube-system --timeout=300s
       changed_when: false
 
-    # Poll instead of one long silent `kubectl wait`:
-    #  - every attempt is a short SSH call, so idle-TCP drops on the runner can't hang it
-    #  - "FAILED - RETRYING ... (N retries left)" in the log shows the job is alive
-    #  - the last attempt's table (name / sync / health per app) is kept for the rescue
-    # Healthy alone is not enough: while an app's first sync is still running (e.g. only
-    # its PreSync hook Job exists yet) Argo reports it Healthy. So the last operation must
-    # also have Succeeded. Sync status is not required (drift can be benign).
+    # Short polling calls: visible progress, no idle-TCP hangs.
+    # Healthy alone passes mid-sync, so the last operation must have Succeeded too.
     - name: Wait for GitOps to converge
       block:
         - name: Wait until every Argo CD application is Healthy

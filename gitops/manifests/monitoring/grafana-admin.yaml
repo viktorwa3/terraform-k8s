@@ -1,6 +1,5 @@
 ---
-# Git holds only a pointer to the secret. The value lives in SSM Parameter Store
-# (written by Terraform as a write-only attribute) and is materialised here by ESO.
+# Git holds only the SSM path; ESO fetches the value.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

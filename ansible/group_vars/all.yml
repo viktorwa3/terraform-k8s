@@ -1,8 +1,5 @@
 ---
-# Minor track for the pkgs.k8s.io apt repo and the apt version pin.
-# kubernetesVersion is deliberately NOT set in ClusterConfiguration: kubeadm then
-# uses its own binary version, which matches the apt-installed kubelet. Pinning it
-# separately produced kubelet 1.36.4 against a 1.36.0 control plane.
+# kubernetesVersion is left unset so kubeadm matches the apt-installed kubelet.
 k8s_minor: "v1.36"
 k8s_apt_version: "1.36.*"
 
@@ -12,15 +9,13 @@ service_cidr: "10.96.0.0/12"
 cilium_version: "1.20.2"
 helm_version: "v3.19.0"
 
-# Workloads may land on the control plane only while there are no workers.
-# As soon as the workers group is non-empty the control-plane taint is restored.
+# CP takes workloads only while there are no workers.
 untaint_control_plane: "{{ groups['workers'] | default([]) | length == 0 }}"
 
-# GitOps: Ansible only bootstraps Argo CD and the root app-of-apps; everything
-# under gitops/apps is reconciled by Argo CD from git afterwards.
+# Ansible only bootstraps Argo CD; the rest comes from git.
 argocd_chart_version: "10.9.2"
 gitops_repo_url: https://github.com/viktorwa3/terraform-k8s.git
 gitops_revision: master
 gitops_apps_path: gitops/apps
-# root + external-secrets + secret-stores + monitoring-secrets + kube-prometheus-stack
-gitops_expected_apps: 5
+# root + 5 child apps
+gitops_expected_apps: 6

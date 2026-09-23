@@ -6,9 +6,7 @@ backend_config:
   workspaces:
     name: light
 search_child_modules: true
-# Without this the plugin names hosts "<type>_<name>" with NO count index, so
-# aws_instance.worker[0] and [1] would both become "aws_instance_worker" and
-# silently overwrite each other. The Name tag is unique per instance.
+# Default hostnames have no count index, so worker[0] and [1] would collide.
 hostnames:
   - tag:Name
 compose:

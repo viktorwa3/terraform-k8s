@@ -16,9 +16,7 @@ resource "aws_iam_role" "node" {
   tags               = local.default_tags
 }
 
-# Read-only access to this project's parameters and nothing else.
-# SecureString parameters use the AWS-managed aws/ssm key, whose key policy already
-# allows decryption through SSM, so no explicit kms:Decrypt is needed.
+# Read-only on this project's parameters; the aws/ssm key needs no kms:Decrypt.
 data "aws_iam_policy_document" "node_ssm_read" {
   statement {
     actions = [

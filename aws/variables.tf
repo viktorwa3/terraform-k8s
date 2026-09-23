@@ -37,3 +37,9 @@ variable "worker_instance_type" {
   type        = string
   default     = "t3a.medium"
 }
+
+variable "web_access_cidrs" {
+  description = "CIDRs allowed to reach the ingress-nginx NodePorts (30080/30443)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

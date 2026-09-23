@@ -7,7 +7,7 @@
     group: root
     mode: "0755"
 
-# apt supports ASCII-armoured keys in signed-by, so no gpg --dearmor step is needed.
+# apt reads armoured keys directly, no gpg --dearmor needed.
 - name: Download the Kubernetes apt repository key
   ansible.builtin.get_url:
     url: "https://pkgs.k8s.io/core:/stable:/{{ k8s_minor }}/deb/Release.key"

@@ -2,8 +2,7 @@ locals {
   ssm_prefix = "/terraform-k8s"
 }
 
-# Ephemeral + write-only: the password is generated during apply, written to SSM,
-# and never lands in the Terraform plan or state. Bump the version to rotate it.
+# Generated during apply, never stored in plan or state; bump the version to rotate.
 ephemeral "random_password" "grafana_admin" {
   length  = 24
   special = false

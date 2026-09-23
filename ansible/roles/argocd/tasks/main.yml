@@ -21,12 +21,10 @@
         enabled: false
       configs:
         params:
-          # TLS is terminated by the kubectl port-forward / SSH tunnel for the demo
+          # TLS terminated by ingress-nginx / the tunnel
           server.insecure: true
         cm:
-          # Argo CD does not assess the health of Application resources by default,
-          # so sync waves in an app-of-apps would not wait for the previous wave to
-          # become Healthy. This restores that behaviour.
+          # Restores Application health so sync waves actually wait.
           resource.customizations.health.argoproj.io_Application: |
             hs = {}
             hs.status = "Progressing"

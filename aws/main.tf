@@ -58,9 +58,7 @@ resource "aws_route_table_association" "cluster_internal" {
   route_table_id = aws_route_table.public.id
 }
 
-# Not every AZ offers every instance type (us-east-1e has no t3a.*). Without an
-# explicit AZ AWS picks one at random for the subnet, and RunInstances then fails.
-# Pick the first AZ, alphabetically, that offers both the CP and the worker type.
+# us-east-1e has no t3a.*, so pick an AZ that offers both instance types.
 data "aws_ec2_instance_type_offerings" "cluster" {
   for_each      = toset([var.ec2_instance_type, var.worker_instance_type])
   location_type = "availability-zone"
@@ -94,9 +92,7 @@ resource "aws_security_group" "kubernetes" {
   tags = local.default_tags
 }
 
-# Every node shares this SG, so "from the SG itself" == "from any cluster node".
-# Covers kube-apiserver 6443, kubelet 10250, etcd, Cilium VXLAN 8472/udp,
-# Cilium health 4240/tcp, ICMP health probes and the NodePort range in one rule.
+# All nodes share this SG: any traffic between cluster nodes.
 resource "aws_vpc_security_group_ingress_rule" "cluster_internal" {
   security_group_id            = aws_security_group.kubernetes.id
   referenced_security_group_id = aws_security_group.kubernetes.id
@@ -104,13 +100,27 @@ resource "aws_vpc_security_group_ingress_rule" "cluster_internal" {
   description                  = "All traffic between cluster nodes"
 }
 
-# aws_security_group with no inline egress block means Terraform REVOKES the
-# AWS default "allow all outbound" rule, so the node cannot reach apt/registries.
+# Without this Terraform revokes AWS's default allow-all-outbound.
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.kubernetes.id
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
   description       = "Allow all outbound"
+}
+
+# No cloud-controller-manager, so NodePort is the cluster's entrypoint.
+resource "aws_vpc_security_group_ingress_rule" "ingress_nginx" {
+  for_each = { for pair in setproduct(var.web_access_cidrs, [30080, 30443]) : "${pair[0]}-${pair[1]}" => {
+    cidr = pair[0]
+    port = pair[1]
+  } }
+
+  security_group_id = aws_security_group.kubernetes.id
+  ip_protocol       = "tcp"
+  cidr_ipv4         = each.value.cidr
+  from_port         = each.value.port
+  to_port           = each.value.port
+  description       = "ingress-nginx NodePort"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
@@ -150,10 +160,7 @@ resource "aws_instance" "cp_main" {
   key_name               = data.aws_key_pair.common_key.key_name
   iam_instance_profile   = aws_iam_instance_profile.node.name
 
-  # IMDSv2 only. The token reply is sent with IP TTL = hop limit. With Cilium
-  # (VXLAN, iptables masquerade) the reply is routed twice on its way into a pod,
-  # so 2 (the usual Docker advice) is not enough: the pod gets an empty token and
-  # the AWS SDK times out. Verified: node OK, pod "token length: 0" with 2.
+  # Hop limit 3: the IMDSv2 token reply must survive Cilium's extra hop into a pod.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
@@ -168,8 +175,7 @@ resource "aws_instance" "cp_main" {
 
   user_data = file("${path.module}/cloud-config.yaml")
 
-  # Name must be unique per instance: the Ansible inventory uses it as the hostname.
-  # Role drives the control_plane / workers inventory groups.
+  # Name is the Ansible inventory hostname; Role drives its groups.
   tags = merge(local.default_tags, {
     Name = "${var.app_name}-cp-0"
     Role = "control-plane"
@@ -186,10 +192,7 @@ resource "aws_instance" "worker" {
   key_name               = data.aws_key_pair.common_key.key_name
   iam_instance_profile   = aws_iam_instance_profile.node.name
 
-  # IMDSv2 only. The token reply is sent with IP TTL = hop limit. With Cilium
-  # (VXLAN, iptables masquerade) the reply is routed twice on its way into a pod,
-  # so 2 (the usual Docker advice) is not enough: the pod gets an empty token and
-  # the AWS SDK times out. Verified: node OK, pod "token length: 0" with 2.
+  # Hop limit 3: the IMDSv2 token reply must survive Cilium's extra hop into a pod.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"

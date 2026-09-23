@@ -17,9 +17,7 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    # Keep retrying while a wave is blocked (e.g. the secret store waiting for
-    # credentials). Without this Argo gives up after the default 5 attempts and
-    # won't try the same commit again.
+    # The default 5 attempts is too few for a temporarily blocked wave.
     retry:
       limit: 10
       backoff:

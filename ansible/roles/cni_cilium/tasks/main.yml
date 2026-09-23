@@ -45,11 +45,9 @@
       ipam:
         mode: kubernetes
       operator:
-        # the chart defaults to 2 replicas with pod anti-affinity, so the second
-        # one sits Pending forever on a single-node cluster. Literal int on
-        # purpose: a templated "{{ ... }}" would reach helm as a string.
+        # Chart default is 2 with anti-affinity. Literal int: a template would be a string.
         replicas: 1
-      # kube-proxy was skipped during kubeadm init, so Cilium takes over
+      # kube-proxy was skipped at init, Cilium replaces it
       kubeProxyReplacement: true
       k8sServiceHost: "{{ ansible_default_ipv4.address }}"
       k8sServicePort: 6443
