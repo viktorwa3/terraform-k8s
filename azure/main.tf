@@ -13,6 +13,10 @@ provider "azurerm" {
     log_analytics_workspace {
       permanently_delete_on_destroy = true
     }
+    # Arc cluster and DCRs are created by Ansible, not Terraform.
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
   }
 }
 
