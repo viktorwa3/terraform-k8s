@@ -55,3 +55,9 @@ variable "budget_start_date" {
   type        = string
   default     = "2026-11-01T00:00:00Z"
 }
+
+variable "secret_reader_object_ids" {
+  description = "Entra user object IDs that get Key Vault Secrets User on the vault"
+  type        = list(string)
+  default     = ["acdabe9e-2b86-4cb7-a253-002a714ef048"]
+}
