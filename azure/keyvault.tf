@@ -23,6 +23,16 @@ resource "azurerm_role_assignment" "ci_secrets_officer" {
   principal_type       = "ServicePrincipal"
 }
 
+# Survives RG rebuilds without manual grants.
+resource "azurerm_role_assignment" "secret_readers" {
+  for_each = toset(var.secret_reader_object_ids)
+
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = each.value
+  principal_type       = "User"
+}
+
 # New role assignments take a while to apply; the secret write fails with 403 before.
 resource "time_sleep" "rbac_propagation" {
   create_duration = "60s"
