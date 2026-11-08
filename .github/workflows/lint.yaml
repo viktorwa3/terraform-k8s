@@ -26,6 +26,7 @@ jobs:
           filters: |
             terraform:
               - 'aws/**'
+              - 'azure/**'
             ansible:
               - 'ansible/**'
             workflows:
@@ -47,9 +48,13 @@ jobs:
     needs: changes
     if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [aws, azure]
     defaults:
       run:
-        working-directory: ./aws
+        working-directory: ./${{ matrix.dir }}
     steps:
       - uses: actions/checkout@v4
  

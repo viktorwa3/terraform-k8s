@@ -1,0 +1,277 @@
+name: Configure Azure cluster
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'azure/**'
+      - 'ansible/**'
+      - 'gitops/azure/**'
+      - 'aws/cloud-config.yaml'
+      - '.github/workflows/configure-azure.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: configure-azure
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  TERRAFORM_VERSION: 1.15.8
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: ./azure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Must be Registered before the VNet exists, or Azure creates NetworkWatcherRG.
+      - name: Disable NetworkWatcherRG autocreation
+        run: |
+          feature=DisableNetworkWatcherAutocreation
+          state() { az feature show --namespace Microsoft.Network --name "$feature" --query properties.state -o tsv; }
+          if [ "$(state)" != Registered ]; then
+            az feature register --namespace Microsoft.Network --name "$feature" -o none
+            for _ in $(seq 1 60); do
+              [ "$(state)" = Registered ] && break
+              sleep 10
+            done
+            [ "$(state)" = Registered ]
+            az provider register --namespace Microsoft.Network -o none
+          fi
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - run: terraform init
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -out=tfplan -detailed-exitcode
+          code=$?
+          set -e
+          case $code in
+            0) echo "has_changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "has_changes=true"  >> "$GITHUB_OUTPUT" ;;
+            *) exit $code ;;
+          esac
+
+      - name: Summary
+        if: steps.plan.outputs.has_changes == 'true'
+        run: |
+          {
+            echo '## Terraform plan'
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The lock file keeps apply on the exact provider builds that made the plan.
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.has_changes == 'true'
+        with:
+          name: tfplan-azure
+          path: |
+            azure/tfplan
+            azure/.terraform.lock.hcl
+          include-hidden-files: true
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: azure
+    defaults:
+      run:
+        working-directory: ./azure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-azure
+          path: azure
+
+      - run: terraform init
+      - run: terraform apply tfplan
+
+  ansible:
+    needs: [plan, apply]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.apply.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANSIBLE_FORCE_COLOR: "1"
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_INVENTORY: inventory/azure.py
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache galaxy collections
+        uses: actions/cache@v4
+        with:
+          path: ~/.ansible/collections
+          key: galaxy-${{ hashFiles('ansible/requirements.yaml') }}
+
+      - name: Install ansible + collections
+        run: |
+          pip install 'ansible-core==2.18.*'
+          ansible-galaxy install -r ansible/requirements.yaml
+
+      - name: Terraform outputs to inventory source
+        working-directory: azure
+        run: |
+          terraform init
+          terraform output -json > ../ansible/tf-azure.json
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.NODE_SSH_KEY }}
+
+      - name: Sanity check inventory
+        working-directory: ansible
+        run: |
+          chmod +x inventory/azure.py
+          ansible-inventory --list > inv.json
+          test "$(jq '._meta.hostvars | length' inv.json)" -gt 0 || { echo "empty inventory"; exit 1; }
+
+      - name: Wait for nodes
+        working-directory: ansible
+        run: |
+          ansible all -m wait_for_connection -a 'delay=10 sleep=5 timeout=300'
+          ansible all -m ping
+
+      - name: Bootstrap Kubernetes
+        working-directory: ansible
+        run: ansible-playbook site.yml -e @vars/azure.yml --diff
+
+      - name: Verify nodes and apps
+        working-directory: ansible
+        run: |
+          cat > "$RUNNER_TEMP/verify-cluster.sh" <<'EOF'
+          set -eu
+          export KUBECONFIG=/etc/kubernetes/admin.conf
+          kubectl wait --for=condition=Ready node --all --timeout=300s
+          for _ in $(seq 1 60); do
+            bad=$(kubectl get applications -n argocd --no-headers \
+              -o custom-columns=N:.metadata.name,H:.status.health.status,P:.status.operationState.phase \
+              | awk '$2 != "Healthy" || $3 != "Succeeded" {print}')
+            [ -z "$bad" ] && break
+            sleep 10
+          done
+          kubectl get nodes,applications -A
+          [ -z "$bad" ] || { echo "Not ready:"; echo "$bad"; exit 1; }
+          EOF
+          ansible control_plane -b -m script -a "$RUNNER_TEMP/verify-cluster.sh"
+
+  verify:
+    needs: ansible
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Read outputs
+        working-directory: azure
+        run: |
+          terraform init
+          terraform output -json > "$RUNNER_TEMP/tf.json"
+
+      - name: Arc cluster and extensions
+        run: |
+          rg=$(jq -r .resource_group.value "$RUNNER_TEMP/tf.json")
+          cluster=$(jq -r .cluster_name.value "$RUNNER_TEMP/tf.json")
+          for _ in $(seq 1 30); do
+            status=$(az resource show -g "$rg" -n "$cluster" \
+              --resource-type Microsoft.Kubernetes/connectedClusters \
+              --query properties.connectivityStatus -o tsv || true)
+            [ "$status" = Connected ] && break
+            sleep 20
+          done
+          echo "Arc connectivity: $status"
+          [ "$status" = Connected ]
+
+          url="https://management.azure.com/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${rg}/providers/Microsoft.Kubernetes/connectedClusters/${cluster}/providers/Microsoft.KubernetesConfiguration/extensions?api-version=2023-05-01"
+          for _ in $(seq 1 30); do
+            az rest --method get --url "$url" \
+              --query 'value[].{name:name, state:properties.provisioningState}' -o json > "$RUNNER_TEMP/ext.json"
+            jq -e 'length > 0 and all(.[]; .state == "Succeeded")' "$RUNNER_TEMP/ext.json" > /dev/null && break
+            sleep 20
+          done
+          jq . "$RUNNER_TEMP/ext.json"
+          jq -e 'length > 0 and all(.[]; .state == "Succeeded")' "$RUNNER_TEMP/ext.json" > /dev/null
+
+      - name: Argo CD over HTTPS
+        run: |
+          fqdn=$(jq -r .ingress_fqdn.value "$RUNNER_TEMP/tf.json")
+          code=000
+          for _ in $(seq 1 60); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${fqdn}/" || true)
+            [ "$code" = 200 ] && break
+            sleep 20
+          done
+          echo "https://${fqdn}/ -> ${code}"
+          [ "$code" = 200 ]
+          {
+            echo '## Azure cluster'
+            echo "- Argo CD: https://${fqdn}/ (HTTP ${code})"
+            echo "- Arc: Connected, extensions Succeeded"
+          } >> "$GITHUB_STEP_SUMMARY"

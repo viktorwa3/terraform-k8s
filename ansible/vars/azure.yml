@@ -1,0 +1,5 @@
+---
+# Azure overrides; node and Terraform values come from inventory/azure.py.
+gitops_apps_path: gitops/azure/apps
+# root + external-secrets, ingress-nginx, cert-manager, cert-manager-issuer
+gitops_expected_apps: 5
