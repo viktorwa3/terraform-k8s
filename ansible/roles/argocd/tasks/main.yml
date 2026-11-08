@@ -32,8 +32,8 @@
     kubeconfig: /etc/kubernetes/admin.conf
     wait: true
     timeout: 10m
-    no_log: true
     values: "{{ argocd_values | combine(argocd_extra_values, recursive=true) }}"
+  no_log: true
 
 - name: Render the root app-of-apps
   ansible.builtin.template:
