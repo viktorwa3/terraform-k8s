@@ -49,7 +49,7 @@ resource "random_string" "suffix" {
   upper   = false
 
   keepers = {
-    resource_group = azurerm_resource_group.main.id
+    vnet_guid = azurerm_virtual_network.main.guid # new on every RG rebuild
   }
 }
 

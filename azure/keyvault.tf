@@ -27,6 +27,11 @@ resource "azurerm_role_assignment" "ci_secrets_officer" {
 resource "time_sleep" "rbac_propagation" {
   create_duration = "60s"
 
+  triggers = {
+    role_assignment = azurerm_role_assignment.ci_secrets_officer.id
+    key_vault       = azurerm_key_vault.main.id
+  }
+
   depends_on = [azurerm_role_assignment.ci_secrets_officer]
 }
 
