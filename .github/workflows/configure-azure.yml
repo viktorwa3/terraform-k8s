@@ -213,8 +213,10 @@ jobs:
 
   verify:
     needs: ansible
+    # skipped apply must not skip verify
+    if: ${{ !cancelled() && needs.ansible.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -259,6 +261,18 @@ jobs:
           jq . "$RUNNER_TEMP/ext.json"
           jq -e 'length > 0 and all(.[]; .state == "Succeeded")' "$RUNNER_TEMP/ext.json" > /dev/null
 
+      - name: Logs and metrics in Log Analytics
+        run: |
+          ws=$(az resource show --ids "$(jq -r .log_analytics_workspace_id.value "$RUNNER_TEMP/tf.json")" --query properties.customerId -o tsv)
+          q='{"query":"union withsource=T ContainerLogV2, Perf, KubePodInventory | where TimeGenerated > ago(30m) | summarize n=count() by T"}'
+          for _ in $(seq 1 45); do
+            az rest --method post --url "https://api.loganalytics.io/v1/workspaces/${ws}/query" --resource https://api.loganalytics.io --body "$q" --query 'tables[0].rows' -o json > "$RUNNER_TEMP/la.json"
+            [ "$(jq length "$RUNNER_TEMP/la.json")" -ge 3 ] && break
+            sleep 20
+          done
+          jq -c . "$RUNNER_TEMP/la.json"
+          [ "$(jq length "$RUNNER_TEMP/la.json")" -ge 3 ]
+
       - name: Argo CD over HTTPS
         run: |
           fqdn=$(jq -r .ingress_fqdn.value "$RUNNER_TEMP/tf.json")
@@ -274,4 +288,5 @@ jobs:
             echo '## Azure cluster'
             echo "- Argo CD: https://${fqdn}/ (HTTP ${code})"
             echo "- Arc: Connected, extensions Succeeded"
+            echo "- Log Analytics: ContainerLogV2, Perf, KubePodInventory receiving data"
           } >> "$GITHUB_STEP_SUMMARY"
