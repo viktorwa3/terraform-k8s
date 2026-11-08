@@ -55,7 +55,7 @@ jobs:
 
       - name: Summary
         run: |
-          rg=rg-terraform-k8s
+          rg="rg-terraform-k8s"
           {
             echo '## Azure destroy'
             echo "- RG ${rg} exists: $(az group exists -n "$rg")"
