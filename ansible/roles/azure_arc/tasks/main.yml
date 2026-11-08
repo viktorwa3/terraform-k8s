@@ -1,0 +1,135 @@
+---
+- name: Add the Microsoft apt signing key
+  ansible.builtin.get_url:
+    url: https://packages.microsoft.com/keys/microsoft.asc
+    dest: /etc/apt/keyrings/microsoft.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add the Azure CLI apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/azure-cli/ noble main"
+    filename: azure-cli
+    state: present
+
+- name: Install the Azure CLI
+  ansible.builtin.apt:
+    name: "azure-cli={{ azure_cli_version }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check the Azure login
+  ansible.builtin.command:
+    cmd: az account show --query id -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_account
+  changed_when: false
+  failed_when: false
+
+# The VM identity needs Contributor on the RG for Arc and extension onboarding.
+- name: Log in with the node managed identity
+  ansible.builtin.command:
+    cmd: az login --identity --client-id {{ azure_node_identity_client_id }}
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_login
+  changed_when: true
+  until: azure_arc_login.rc == 0
+  retries: 10
+  delay: 15
+  when: azure_arc_account.rc != 0 or azure_arc_account.stdout != azure_subscription_id
+
+- name: Select the subscription
+  ansible.builtin.command:
+    cmd: az account set --subscription {{ azure_subscription_id }}
+  environment: "{{ azure_arc_env }}"
+  changed_when: false
+
+- name: Read the installed Azure CLI extensions
+  ansible.builtin.command:
+    cmd: az extension list --query "[].[name,version]" -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_extensions
+  changed_when: false
+
+- name: Install the pinned Azure CLI extensions
+  ansible.builtin.command:
+    cmd: az extension add --name {{ item.key }} --version {{ item.value }} --upgrade --yes
+  environment: "{{ azure_arc_env }}"
+  changed_when: true
+  when: (item.key ~ '\t' ~ item.value) not in azure_arc_extensions.stdout_lines
+  loop: "{{ azure_cli_extensions | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Check whether the cluster is Arc-connected
+  ansible.builtin.command:
+    cmd: >-
+      az connectedk8s show --resource-group {{ azure_resource_group }}
+      --name {{ azure_cluster_name }} --query connectivityStatus -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_show
+  changed_when: false
+  failed_when: false
+
+- name: Connect the cluster to Azure Arc
+  ansible.builtin.command:
+    cmd: >-
+      az connectedk8s connect --resource-group {{ azure_resource_group }}
+      --name {{ azure_cluster_name }} --location {{ azure_location }}
+      --kube-config /etc/kubernetes/admin.conf --yes
+  environment: "{{ azure_arc_env }}"
+  changed_when: true
+  async: 1200
+  poll: 15
+  when: azure_arc_show.rc != 0
+
+- name: Wait for the Arc agents to report Connected
+  ansible.builtin.command:
+    cmd: >-
+      az connectedk8s show --resource-group {{ azure_resource_group }}
+      --name {{ azure_cluster_name }} --query connectivityStatus -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_status
+  changed_when: false
+  retries: 40
+  delay: 15
+  until: azure_arc_status.rc == 0 and azure_arc_status.stdout | trim == 'Connected'
+
+- name: Check the Container Insights extension
+  ansible.builtin.command:
+    cmd: >-
+      az k8s-extension show --cluster-type connectedClusters
+      --cluster-name {{ azure_cluster_name }} --resource-group {{ azure_resource_group }}
+      --name {{ azure_monitor_extension }} --query provisioningState -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_ext_show
+  changed_when: false
+  failed_when: false
+
+# AAD auth: logs and metrics go through a DCR in the same RG into the one workspace.
+- name: Install the Container Insights extension
+  ansible.builtin.command:
+    cmd: >-
+      az k8s-extension create --cluster-type connectedClusters
+      --cluster-name {{ azure_cluster_name }} --resource-group {{ azure_resource_group }}
+      --name {{ azure_monitor_extension }} --extension-type Microsoft.AzureMonitor.Containers
+      --configuration-settings logAnalyticsWorkspaceResourceID={{ azure_log_analytics_workspace_id }}
+      amalogs.useAADAuth=true --no-wait
+  environment: "{{ azure_arc_env }}"
+  changed_when: true
+  when: azure_arc_ext_show.rc != 0
+
+- name: Wait for the Container Insights extension to succeed
+  ansible.builtin.command:
+    cmd: >-
+      az k8s-extension show --cluster-type connectedClusters
+      --cluster-name {{ azure_cluster_name }} --resource-group {{ azure_resource_group }}
+      --name {{ azure_monitor_extension }} --query provisioningState -o tsv
+  environment: "{{ azure_arc_env }}"
+  register: azure_arc_ext_status
+  changed_when: false
+  retries: 40
+  delay: 15
+  until: azure_arc_ext_status.rc == 0 and azure_arc_ext_status.stdout | trim == 'Succeeded'

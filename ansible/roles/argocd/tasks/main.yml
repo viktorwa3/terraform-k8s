@@ -4,6 +4,24 @@
     name: argo
     repo_url: https://argoproj.github.io/argo-helm
 
+- name: Read the admin password from Key Vault
+  ansible.builtin.include_tasks: admin_password.yml
+  when: argocd_key_vault_uri | length > 0
+
+- name: Serve Argo CD through ingress-nginx with a cert-manager certificate
+  ansible.builtin.set_fact:
+    argocd_extra_values: >-
+      {{ argocd_extra_values | combine({
+        'global': {'domain': argocd_ingress_host},
+        'server': {'ingress': {
+          'enabled': true,
+          'ingressClassName': 'nginx',
+          'hostname': argocd_ingress_host,
+          'tls': true,
+          'annotations': {'cert-manager.io/cluster-issuer': 'letsencrypt'}}}},
+        recursive=true) }}
+  when: argocd_ingress_host | length > 0
+
 - name: Install Argo CD
   kubernetes.core.helm:
     name: argocd
@@ -14,30 +32,8 @@
     kubeconfig: /etc/kubernetes/admin.conf
     wait: true
     timeout: 10m
-    values:
-      dex:
-        enabled: false
-      notifications:
-        enabled: false
-      configs:
-        params:
-          # TLS terminated by ingress-nginx / the tunnel
-          server.insecure: true
-        cm:
-          # Restores Application health so sync waves actually wait.
-          resource.customizations.health.argoproj.io_Application: |
-            hs = {}
-            hs.status = "Progressing"
-            hs.message = ""
-            if obj.status ~= nil then
-              if obj.status.health ~= nil then
-                hs.status = obj.status.health.status
-                if obj.status.health.message ~= nil then
-                  hs.message = obj.status.health.message
-                end
-              end
-            end
-            return hs
+    no_log: true
+    values: "{{ argocd_values | combine(argocd_extra_values, recursive=true) }}"
 
 - name: Render the root app-of-apps
   ansible.builtin.template:
@@ -52,3 +48,7 @@
     cmd: kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f /etc/kubernetes/argocd-root-app.yaml
   register: argocd_root_apply
   changed_when: "'unchanged' not in argocd_root_apply.stdout"
+
+- name: Create the Key Vault secret store
+  ansible.builtin.include_tasks: secret_store.yml
+  when: argocd_key_vault_uri | length > 0

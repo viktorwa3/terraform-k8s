@@ -1,0 +1,31 @@
+---
+# Set by the Azure inventory; empty keeps the AWS behaviour.
+argocd_key_vault_uri: ""
+argocd_key_vault_secret: argocd-admin-password
+argocd_ingress_host: ""
+argocd_extra_values: {}
+
+argocd_values:
+  dex:
+    enabled: false
+  notifications:
+    enabled: false
+  configs:
+    params:
+      # TLS terminated by ingress-nginx / the tunnel
+      server.insecure: true
+    cm:
+      # Restores Application health so sync waves actually wait.
+      resource.customizations.health.argoproj.io_Application: |
+        hs = {}
+        hs.status = "Progressing"
+        hs.message = ""
+        if obj.status ~= nil then
+          if obj.status.health ~= nil then
+            hs.status = obj.status.health.status
+            if obj.status.health.message ~= nil then
+              hs.message = obj.status.health.message
+            end
+          end
+        end
+        return hs

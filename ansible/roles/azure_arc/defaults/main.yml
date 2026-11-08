@@ -1,0 +1,10 @@
+---
+azure_cli_version: "2.92.0-1~noble"
+azure_cli_extensions:
+  connectedk8s: "1.11.6"
+  k8s-extension: "1.9.4"
+azure_monitor_extension: azuremonitor-containers
+azure_arc_env:
+  AZURE_CORE_COLLECT_TELEMETRY: "false"
+  AZURE_CORE_ONLY_SHOW_ERRORS: "true"
+  AZURE_CORE_NO_COLOR: "true"

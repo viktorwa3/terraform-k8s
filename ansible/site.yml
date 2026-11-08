@@ -37,6 +37,15 @@
     - role: argocd
       tags: [argocd]
 
+- name: Connect to Azure Arc and Azure Monitor
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  roles:
+    - role: azure_arc
+      tags: [azure_arc]
+      when: azure_arc_enabled | default(false) | bool
+
 - name: Verify the cluster
   hosts: control_plane
   become: true
@@ -96,3 +105,20 @@
         - name: Fail with the GitOps state
           ansible.builtin.fail:
             msg: "{{ gitops_conditions.stdout_lines + [''] + gitops_eso.stdout_lines + [gitops_eso.stderr | default('')] }}"
+
+- name: Verify the public endpoint
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [verify]
+  tasks:
+    # From the runner: a VM cannot reach its own LB frontend (hairpin).
+    - name: Wait for HTTPS 200 with a valid certificate on the Argo CD URL
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[groups['control_plane'][0]].argocd_ingress_host }}/"
+        status_code: 200
+      register: public_endpoint
+      retries: 40
+      delay: 15
+      until: public_endpoint.status | default(0) == 200
+      when: hostvars[groups['control_plane'][0]].argocd_ingress_host | default('') | length > 0
